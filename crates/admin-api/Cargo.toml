@@ -1,0 +1,27 @@
+[package]
+name = "admin-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+bubo.workspace = true
+admin-migration.workspace = true
+tokio.workspace = true
+sea-orm.workspace = true
+tracing.workspace = true
+time.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+argon2.workspace = true
+fred.workspace = true
+validator.workspace = true
+num_enum.workspace = true
+
+[lints]
+workspace = true

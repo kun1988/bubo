@@ -1,0 +1,21 @@
+2024-08-27T08:44:13.702369Z  INFO bubo::utils::log: 日志初始化完成
+2024-08-27T08:44:13.772606Z  INFO bubo::utils::database: Connected to Database
+2024-08-27T08:44:13.783913Z  INFO bubo::utils::redis: Connected to Redis
+2024-08-27T08:44:13.785019Z  INFO bubo::server: listening on 0.0.0.0:8080
+2024-08-27T08:44:13.786277Z  INFO bubo::server: listening on 0.0.0.0:3001
+2024-08-27T08:44:30.411349Z DEBUG request{[3mid[0m[2m=[0m9491b410-832d-43f3-9cf7-501ce6ff5651}: bubo::server: started GET /admin/auth/userinfo
+2024-08-27T08:44:30.411752Z ERROR request{[3mid[0m[2m=[0m9491b410-832d-43f3-9cf7-501ce6ff5651}: bubo::utils::error: System error: unauthorized
+2024-08-27T08:44:30.411930Z DEBUG request{[3mid[0m[2m=[0m9491b410-832d-43f3-9cf7-501ce6ff5651}: bubo::server: response generated in 757.223µs
+2024-08-27T08:44:30.412209Z DEBUG request{[3mid[0m[2m=[0m9491b410-832d-43f3-9cf7-501ce6ff5651}: bubo::server: sending 66 bytes: {"error_code":10004,"error_message":"unauthorized","status":false}
+2024-08-27T08:44:32.338378Z DEBUG request{[3mid[0m[2m=[0m746c03c6-5226-46c0-a628-2600f3339874}: bubo::server: started GET /admin/auth/userinfo
+2024-08-27T08:44:32.338798Z ERROR request{[3mid[0m[2m=[0m746c03c6-5226-46c0-a628-2600f3339874}: bubo::utils::error: System error: unauthorized
+2024-08-27T08:44:32.338966Z DEBUG request{[3mid[0m[2m=[0m746c03c6-5226-46c0-a628-2600f3339874}: bubo::server: response generated in 672.085µs
+2024-08-27T08:44:32.339159Z DEBUG request{[3mid[0m[2m=[0m746c03c6-5226-46c0-a628-2600f3339874}: bubo::server: sending 66 bytes: {"error_code":10004,"error_message":"unauthorized","status":false}
+2024-08-27T08:44:46.621416Z DEBUG request{[3mid[0m[2m=[0m4b61d3df-6abe-47f5-9170-6e0057b06918}: bubo::server: started GET /admin/auth/userinfo
+2024-08-27T08:44:46.621884Z ERROR request{[3mid[0m[2m=[0m4b61d3df-6abe-47f5-9170-6e0057b06918}: bubo::utils::error: System error: unauthorized
+2024-08-27T08:44:46.622052Z DEBUG request{[3mid[0m[2m=[0m4b61d3df-6abe-47f5-9170-6e0057b06918}: bubo::server: response generated in 725.245µs
+2024-08-27T08:44:46.622244Z DEBUG request{[3mid[0m[2m=[0m4b61d3df-6abe-47f5-9170-6e0057b06918}: bubo::server: sending 66 bytes: {"error_code":10004,"error_message":"unauthorized","status":false}
+2024-08-27T08:44:57.282724Z DEBUG request{[3mid[0m[2m=[0mfb1acdc3-6cca-4e10-af3c-9ec15041fcad}: bubo::server: started GET /admin/auth/userinfo
+2024-08-27T08:44:57.283084Z ERROR request{[3mid[0m[2m=[0mfb1acdc3-6cca-4e10-af3c-9ec15041fcad}: bubo::utils::error: System error: unauthorized
+2024-08-27T08:44:57.283252Z DEBUG request{[3mid[0m[2m=[0mfb1acdc3-6cca-4e10-af3c-9ec15041fcad}: bubo::server: response generated in 668.891µs
+2024-08-27T08:44:57.283457Z DEBUG request{[3mid[0m[2m=[0mfb1acdc3-6cca-4e10-af3c-9ec15041fcad}: bubo::server: sending 66 bytes: {"error_code":10004,"error_message":"unauthorized","status":false}

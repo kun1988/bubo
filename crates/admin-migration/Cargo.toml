@@ -1,0 +1,22 @@
+[package]
+name = "admin-migration"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+bubo.workspace = true
+
+async-std.workspace = true
+sea-orm-migration.workspace = true
+rand.workspace = true
+hex.workspace = true
+argon2.workspace = true
+
+[lints]
+workspace = true

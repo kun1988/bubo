@@ -1,0 +1,50 @@
+[package]
+name = "bubo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
+fred.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+dotenvy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+tokio.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+validator.workspace = true
+jsonwebtoken.workspace = true
+uuid.workspace = true
+itoa.workspace = true
+radix_fmt.workspace = true
+once_cell.workspace = true
+argon2.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+pretty_assertions.workspace = true
+tokio.workspace = true
+tokio-test.workspace = true
+
+[lints]
+workspace = true
