@@ -39,6 +39,7 @@ radix_fmt.workspace = true
 once_cell.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
+crossbeam.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

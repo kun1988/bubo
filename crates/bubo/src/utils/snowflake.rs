@@ -1,130 +1,109 @@
-
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
 use once_cell::sync::OnceCell;
-use tracing::error;
+use std::thread;
+use std::time::{Duration, SystemTime};
+use crossbeam::atomic::AtomicCell;
 
-use super::time::current_timestamp_ms;
+const EPOCH: i64 = 1574784000000; // 起始时间戳 (2019-11-27)
+const WORKER_ID_BITS: u8 = 8;          // 机器 ID 占用位数
+const SEQUENCE_BITS: u8 = 14;          // 序列号占用位数
 
-/// 开始时间截(2019-11-27)
-const EPOCH: i64 = 1574784000000;
-/// 序列所占位数(12)
-const SEQUENCE_BITS: i64 = 12;
-/// 机器id所占位数(10)
-const WORKER_ID_BITS: i64 = 10;
-/// 机器id掩码
-const WORKER_ID_MASK: i64 = -1 ^ (-1 << WORKER_ID_BITS);
-/// 机器id左移位数
-const WORKER_ID_LEFT_SHIFT: i64 = SEQUENCE_BITS;
-/// 时间戳左移位数
-const TIMESTAMP_LEFT_SHIFT: i64 = WORKER_ID_LEFT_SHIFT + WORKER_ID_BITS;
-/// 生成序列的掩码，这里为4095 (0b111111111111=0xfff=4095)
-const SEQUENCE_MASK: i64 = -1 ^ (-1 << SEQUENCE_BITS);
-/// 生成序列的最大值，这里为4095 (0b111111111111=0xfff=4095)
-// const MAX_SEQUENCE: i64 = -1 ^ (-1 << SEQUENCE_BITS);
-/// 最大时间戳， 41位
-const MAX_TIME: i64 = (1 << 41) -1;
+const MAX_WORKER_ID: i64 = (1 << WORKER_ID_BITS) - 1;
+const SEQUENCE_MASK: i64 = (1 << SEQUENCE_BITS) - 1;
+
+const TIMESTAMP_SHIFT: u32 = (WORKER_ID_BITS + SEQUENCE_BITS) as u32; // 高位时间戳偏移
+
 
 pub struct Snowflake {
-    inner: Mutex<TimestampSequence>,
-    worker_id: i64,
-}
-
-#[derive(Copy, Clone)]
-struct TimestampSequence {
-    timestamp: i64,
-    sequence: i64,
-    begin_id: i64,
-}
-
-impl TimestampSequence {
-    fn new() -> Self {
-        Self {
-            timestamp: EPOCH,
-            sequence: 0,
-            begin_id: 0,
-        }
-    }
+    worker_id: u8,
+    state: AtomicCell<u64>, // 聚合状态，高位存储时间戳，低位存储序列号
 }
 
 impl Snowflake {
-    pub fn new(worker_id: u16) -> Self {
+    pub fn new(worker_id: u8) -> Self {
+        if worker_id as i64 > MAX_WORKER_ID || worker_id < 0 {
+            panic!("Worker ID must be within 0 ~ {}", MAX_WORKER_ID);
+        }
         Snowflake {
-            worker_id: worker_id as i64,
-            inner: Mutex::new(TimestampSequence::new()),
+            worker_id,
+            state: AtomicCell::new(0), // 初始化为 0
         }
     }
 
     pub fn next_id(&self) -> i64 {
-        let mut timestamp_sequence = self.inner.lock().unwrap();
-        // 当前时间
-        let mut timestamp = get_timestamp();
-        // 如果当前时间小于上一次ID生成的时间戳，说明系统时钟回退过这个时候应当抛出异常
-        if timestamp < timestamp_sequence.timestamp {
-            error!("时钟回退{},{}",timestamp_sequence.timestamp, timestamp);
-            timestamp = timestamp_sequence.timestamp;
-        }
+        loop {
+            // 获取当前的状态
+            let current_state = self.state.load();
+            let last_timestamp = (current_state >> TIMESTAMP_SHIFT) as i64; // 高 42 位是时间戳
+            let sequence = (current_state & SEQUENCE_MASK as u64) as i64;   // 低 12 位是序列号
 
-        // 如果是同一时间生成的，则进行毫秒内序列
-        if timestamp_sequence.timestamp == timestamp {
-            timestamp_sequence.sequence = (timestamp_sequence.sequence + 1) & SEQUENCE_MASK;
-            //毫秒内序列溢出
-            if timestamp_sequence.sequence == 0 {
-                //阻塞到下一个毫秒,获得新的时间戳
-                timestamp = next_millis(timestamp_sequence.timestamp);
-                timestamp_sequence.begin_id = (diff_timestamp(timestamp) << TIMESTAMP_LEFT_SHIFT)
-                    | (self.worker_id << WORKER_ID_LEFT_SHIFT);
+            // 获取当前时间戳
+            let mut timestamp = Self::current_timestamp();
+            if timestamp < last_timestamp {
+                // 时钟回退，直接返回到未来时间
+                timestamp = last_timestamp; // 强制等待当前逻辑时钟消化
             }
+
+            let new_sequence;
+            if timestamp == last_timestamp {
+                // 同一毫秒内，增加序列号
+                new_sequence = (sequence + 1) & SEQUENCE_MASK;
+                if new_sequence == 0 {
+                    // 如果序列号溢出，等待下一毫秒
+                    timestamp = self.wait_for_next_millis(last_timestamp);
+                }
+            } else {
+                // 不同毫秒，重置序列号
+                new_sequence = 0;
+            }
+
+            // 生成新的状态
+            let new_state = ((timestamp as u64) << TIMESTAMP_SHIFT) | new_sequence as u64;
+
+            // CAS 操作尝试更新状态
+            if self.state.compare_exchange(current_state, new_state).is_ok() {
+                // 更新成功，生成 ID 并返回
+                return self.compose_id(timestamp, new_sequence);
+            }
+
+            // 如果 CAS 操作失败，说明有并发冲突，重新尝试
+            // 如果 CAS 失败，立即重试（无需显式循环，loop 会处理）
         }
-        //时间戳改变，毫秒内序列重置
-        else {
-//            sequence = betweenLong(0, 1, true);//解决雪花算法在1ms内没有并发尾数始终是偶数问题，但是生成速度会比传统的雪花减少50%，1ms内2048次并发支持
-            //上面这个地方的逻辑当时想的是要让这个id能尽量按2模散列,单实际这儿不该做这事，应该是外面用idhash再去散列，所以变回来
-            timestamp_sequence.sequence = 0;
-            timestamp_sequence.begin_id = (diff_timestamp(timestamp) << TIMESTAMP_LEFT_SHIFT)
-                | (self.worker_id << WORKER_ID_LEFT_SHIFT);
+    }
+
+    fn compose_id(&self, timestamp: i64, sequence: i64) -> i64 {
+        ((timestamp - EPOCH) << TIMESTAMP_SHIFT)
+            | ((self.worker_id as i64) << SEQUENCE_BITS)
+            | sequence
+    }
+
+    /// 在生成 ID 时，线程直接使用 `GLOBAL_TIMESTAMP` 读取值
+    fn current_timestamp() -> i64 {
+        super::time::current_timestamp_ms()
+        // let now = SystemTime::now();
+        // let duration = now.duration_since(UNIX_EPOCH).expect("System clock is before 1970!");
+        // duration.as_millis() as i64
+    }
+
+    // 改进的等待下一毫秒函数，使用智能休眠策略
+    fn wait_for_next_millis(&self, last_timestamp: i64) -> i64 {
+        let mut timestamp = Self::current_timestamp();
+
+        while timestamp <= last_timestamp {
+            // Sleep 100 微秒避免忙等待
+            thread::sleep(Duration::from_micros(100));
+            timestamp = Self::current_timestamp();
         }
-
-        //上次生成ID的时间截
-        timestamp_sequence.timestamp = timestamp;
-
-        return timestamp_sequence.begin_id + timestamp_sequence.sequence;
+        timestamp
     }
-}
-
-fn next_millis(last_timestamp: i64) -> i64 {
-    let mut timestamp = get_timestamp();
-    while timestamp <= last_timestamp {
-        timestamp = get_timestamp();
-    }
-    timestamp
-}
-
-fn get_timestamp() -> i64 {
-    // let timestamp = (now_utc().unix_timestamp_nanos()
-    //         / Nanosecond::per(Millisecond) as i128)
-    //         as i64;
-    // timestamp
-    current_timestamp_ms()
-}
-
-fn diff_timestamp(timestamp: i64) -> i64 {
-    let diff_timestamp = timestamp - EPOCH;
-    if diff_timestamp > MAX_TIME {
-        panic!("超出最大时间限制");
-    }
-    diff_timestamp
 }
 
 fn get_generator() -> &'static Snowflake {
     static INSTANCE: OnceCell<Snowflake> = OnceCell::new();
 
     INSTANCE.get_or_init(|| {
-        let worker_id = std::env::var("WORKER_ID").expect("WORKER_ID is not set in .env file").parse::<u16>().expect("WORKER_ID parse error");
-        Snowflake {
-            worker_id: worker_id as i64 & WORKER_ID_MASK,
-            inner: Mutex::new(TimestampSequence::new()),
-        }
+        let worker_id = std::env::var("WORKER_ID").expect("WORKER_ID is not set in .env file").parse::<u8>().expect("WORKER_ID parse error");
+        Snowflake::new(worker_id)
     })
 }
 
@@ -141,49 +120,41 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    const THREAD_COUNT: usize = 3;
-    const LOOP_COUNT: u64 = 1000000;
+    const THREAD_COUNT: usize = 5;
+    const LOOP_COUNT: u64 = 2000000;
     #[tokio::test]
     async fn test_next_id() {
-        let mut threads = Vec::with_capacity(THREAD_COUNT);
-        let snowflake = Arc::new(Snowflake::new(0));
-        let mut ids: Vec<i64> = Vec::new();
+        dotenvy::dotenv().ok();
+        // 使用多线程，每个线程负责生成大量 ID
+        let num_threads = 5;
+        let ids_per_thread = 2_000_000; // 每个线程生成 200 万个 ID
 
-        for _i in 0..THREAD_COUNT {
-            threads.push(tokio::spawn(loop_next_id(snowflake.clone(), LOOP_COUNT)));
+        let mut handles = vec![];
+        for _ in 0..num_threads {
+            handles.push(std::thread::spawn(move || {
+                let mut ids = vec![];
+                for _ in 0..ids_per_thread {
+                    ids.push(new_id());
+                }
+                ids
+            }));
         }
 
+        let mut all_ids = vec![];
         let init_date_time = SystemTime::now();
-        for thread in threads {
-            let mut r = thread.await.unwrap();
-            r.sort();
-            ids.extend(r);
+        for handle in handles {
+            all_ids.extend(handle.join().unwrap());
         }
         let milliseconds = SystemTime::now().duration_since(init_date_time).unwrap_or_default().as_millis();
-        println!("cost:{milliseconds}ms");
-        // ids.sort();
-        let mut i = 1;
-        let mut count = 0;
-        while i < ids.len() {
-            if ids[i-1] == ids[i] {
-                count += 1;
-                // println!("{},{}", ids[i-1], ids[i]);
-            }
-            i+=1;
-        }
-        println!("总共id:{}, 重复id:{count}", ids.len());
-        assert_eq!(count, 0)
-    }
+        println!("cost:{milliseconds}ms speed:{} ids/s", num_threads * ids_per_thread / milliseconds*1_000);
+        // 检查是否有重复的 ID
+        let total_ids = all_ids.len();
+        all_ids.sort();
+        all_ids.dedup();
+        let unique_ids = all_ids.len();
 
-    async fn loop_next_id(snowflake: Arc<Snowflake>, count: u64) -> Vec<i64> {
-        let mut ids: Vec<i64> = Vec::new();
-        for _ in 0..count {
-            let id = snowflake.next_id();
-            // let id = snowflake.next_id();
-            ids.push(id);
-            // println!("{id}");
-        }
-        ids
+        println!("Generated {} IDs, {} are unique", total_ids, unique_ids);
+        assert_eq!(total_ids, unique_ids)
     }
 }
 
